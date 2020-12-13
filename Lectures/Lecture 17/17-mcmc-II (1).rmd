@@ -1,0 +1,390 @@
+---
+title: 'MCMC II'
+author: "James M. Flegal"
+output: beamer_presentation
+---
+
+## Agenda
+
+- Markov chain Monte Carlo, again
+- Gibbs sampling
+- Output analysis for MCMC
+- Convergence diagnostics
+- Examples: Capture-recapture and toy example
+
+## Gibbs Sampling
+
+1. Select starting values $x_0$ and set $t=0$
+2. Generate in turn (deterministic scan Gibbs sampler)
+    + $x^{(1)}_{t+1} \sim f( x^{(1)} | x^{(-1)}_t)$
+    + $x^{(2)}_{t+1} \sim f( x^{(2)} | x^{(1)}_{t+1}, x^{(3)}_t, \dots, x^{(p)}_t)$
+    + $x^{(3)}_{t+1} \sim f( x^{(3)} | x^{(1)}_{t+1}, x^{(2)}_{t+1}, x^{(4)}_t, \dots, x^{(p)}_t)$
+    + ...
+    + $x^{(p)}_{t+1} \sim f( x^{(p)} | x^{(-p)}_{t+1})$
+3. Increment $t$ and go to Step 2
+
+## Gibbs Sampling
+
+- Common to have one or more components not available in closed form
+- Then one can just use a MH sampler for those components known as a Metropolis within Gibbs or Hybrid Gibbs sampling
+- Common to ``block'' groups of random variables
+
+## Example: Capture-recapture
+
+- Data from a fur seal pup capture-recapture study for $i=7$ census attempts
+- Goal is to estimate the number of pups in a fur seal colony using a capture-recapture study
+
+Count | Parameter |  1  |  2  |  3  |  4  |  5  |  6  |  7  
+:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|
+Captured | $c_i$ | 30 | 22 | 29 | 26 | 31 | 32 | 35
+Newly Caught | $m_i$ | 30 | 8 | 17 | 7 | 9 | 8 | 5 
+
+## Example: Capture-recapture
+
+- Let $N$ be the population size, $I$ be the number of census attempts where $c_i$ were captured ($I=7$ in our case), and $r$ be the total number captured ($r = \sum_{i=1}^I m_i = 84$)
+
+- We consider a separate unknown capture probability for each census $(\alpha_1, \dots, \alpha_I)$ where the animals are equally ``catchable'' 
+- Then
+\[
+L(N,\alpha | c,r) \propto \frac{N!}{(N-r)!} \prod_{i=1}^{I} \alpha_i ^{c_i} (1-\alpha_i) ^ {N-c_i}
+\]
+
+## Example: Capture-recapture
+
+- Assume $N$ and $\alpha$ are apriori independent with
+\[
+f(N) \propto 1 \mbox{ and } f(\alpha_i | \theta_1, \theta_2) \stackrel{i.i.d.}{\sim} \mbox{Beta} (\theta_1, \theta_2)
+\]
+- We use $\theta_1 = \theta_2 = 1/2$, which is the Jeffrey's Prior
+- The resulting posterior is proper when $I>2$ and recommended when $I>5$
+
+## Example: Capture-recapture
+
+- Then it is easy to show the posterior is
+\[
+f(N,\alpha | c,r) \propto \frac{N!}{(N-r)!} \prod_{i=1}^{I} \alpha_i ^{c_i} (1-\alpha_i) ^ {N-c_i} \prod_{i=1}^{I} \alpha_i^{-1/2} (1-\alpha_i)^{-1/2} .
+\] 
+- Further, one can show
+\[
+\begin{aligned}
+N - 84 | \alpha & \sim \mbox{NB} \left( 85, 1 - \prod_{i=1}^{I} (1-\alpha_i) \right) \mbox{ and }\\
+\alpha_i | N & \sim  \mbox{Beta} \left( c_i + 1/2 , N -c_i + 1/2 \right) \mbox{ for all }i
+\end{aligned}
+\]
+
+
+## Example: Capture-recapture
+
+Then we can consider the chain
+\[
+\left(N , \alpha\right) \rightarrow \left(N' , \alpha\right) \rightarrow \left(N' , \alpha'\right)
+\]
+or 
+\[
+\left(N , \alpha\right) \rightarrow \left(N , \alpha'\right) \rightarrow \left(N' , \alpha'\right) ,
+\]
+where both involve a ``block'' update of $\alpha$
+
+## Example: Capture-recapture
+
+First, we can write the data into R
+\tiny
+```{r}
+captured <- c(30, 22, 29, 26, 31, 32, 35)
+new.captures <- c(30, 8, 17, 7, 9, 8, 5)
+total.r <- sum(new.captures)
+```
+
+## Example: Capture-recapture
+
+The following R code implements the Gibbs sampler
+\tiny
+```{r}
+gibbs.chain <- function(n, N.start = 94, alpha.start = rep(.5,7)) {
+	output <- matrix(0, nrow=n, ncol=8)
+	for(i in 1:n){
+		neg.binom.prob <- 1 - prod(1-alpha.start)
+		N.new <- rnbinom(1, 85, neg.binom.prob) + total.r
+		beta1 <- captured + .5
+		beta2 <- N.new - captured + .5
+		alpha.new <- rbeta(7, beta1, beta2)
+		output[i,] <- c(N.new, alpha.new)
+		N.start <- N.new
+		alpha.start <- alpha.new	
+	}
+	return(output)
+}
+```
+
+## MCMC output analysis
+
+How can we tell if the chain is mixing well?
+
+- Trace plots or time-series plots
+- Autocorrelation plots
+- Plot of estimate versus Markov chain sample size
+- Effective sample size (ESS)
+\[
+\text{ESS} (n) =  \frac{n}{1+2 \sum_{k=1}^{\infty} \rho_{k}(g)},
+\]
+where $\rho_{k}(g)$ is the autocorrelation of lag $k$ for $g$
+- Alternative, ESS can be written as 
+\[
+\text{ESS} (n) =  \frac{n}{\sigma ^2 / \text{Var} g}
+\]
+where $\sigma ^2$ is the asymptotic variance from a Markov chain CLT
+
+## Example: Capture-recapture
+
+Then we consider some preliminary simulations to ensure the chain is mixing well
+\tiny
+```{r, eval=FALSE}
+trial <- gibbs.chain(1000)
+plot.ts(trial[,1], main = "Trace Plot for N")
+for(i in 1:7){
+	plot.ts(trial[,(i+1)], main = paste("Alpha", i))
+	}
+
+acf(trial[,1], main = "Lag Plot for N")
+for(i in 1:7){
+	acf(trial[,(i+1)], main = paste("Lag Alpha", i))
+	}
+```
+
+## Example: Capture-recapture
+
+\tiny
+```{r, out.width = '80%', fig.align = "center", echo=FALSE}
+par(mfrow=c(2,4))
+trial <- gibbs.chain(1000)
+plot.ts(trial[,1], main = "Trace Plot for N")
+for(i in 1:7){
+	plot.ts(trial[,(i+1)], main = paste("Alpha", i))
+	}
+par(mfrow=c(1,1))
+```
+
+## Example: Capture-recapture
+
+\tiny
+```{r, out.width = '80%', fig.align = "center", echo=FALSE}
+par(mfrow=c(2,4))
+acf(trial[,1], main = "Lag Plot for N")
+for(i in 1:7){
+	acf(trial[,(i+1)], main = paste("Lag Alpha", i))
+	}
+par(mfrow=c(1,1))
+```
+
+## Example: Capture-recapture
+
+Now for a more complete simulation to estimate posterior means and a 90% Bayesian credible region
+\tiny
+```{r}
+sim <- gibbs.chain(10000)
+N <- sim[,1]
+alpha1 <- sim[,2]
+```
+
+## Example: Capture-recapture
+
+\tiny
+```{r, out.width = '80%', fig.align = "center"}
+par(mfrow=c(1,2))
+hist(N, freq=F, main="Estimated Marginal Posterior for N")
+hist(alpha1, freq=F, main ="Estimating Marginal Posterior for Alpha 1")
+par(mfrow=c(1,1))
+```
+
+## Example: Capture-recapture
+
+\tiny
+```{r}
+library(mcmcse)
+ess(N)
+ess(alpha1)
+```
+
+## Example: Capture-recapture
+
+\tiny
+```{r, out.width = '80%', fig.align = "center"}
+par(mfrow=c(1,2))
+estvssamp(N)
+estvssamp(alpha1)
+par(mfrow=c(1,1))
+```
+
+## Example: Capture-recapture
+
+\tiny
+```{r}
+mcse(N)
+mcse.q(N, .05)
+mcse.q(N, .95)
+```
+
+## Example: Capture-recapture
+
+\tiny
+```{r}
+mcse(alpha1)
+mcse.q(alpha1, .05)
+mcse.q(alpha1, .95)
+```
+
+## Example: Capture-recapture
+
+\tiny
+```{r}
+current <- sim[10000,] # start from here is you need more simulations
+sim <- rbind(sim, gibbs.chain(10000, N.start = current[1], alpha.start = current[2:8]))
+N.big <- sim[,1]
+```
+
+## Example: Capture-recapture
+
+\tiny
+```{r, out.width = '80%', fig.align = "center"}
+hist(N.big, freq=F, main="Estimated Marginal Posterior for N")
+```
+
+## Example: Capture-recapture
+
+\tiny
+```{r}
+ess(N)
+ess(N.big)
+```
+
+## Example: Capture-recapture
+
+\tiny
+```{r, out.width = '80%', fig.align = "center"}
+estvssamp(N.big)
+```
+
+## Example: Capture-recapture
+
+\tiny
+```{r}
+mcse(N)
+mcse(N.big)
+```
+
+## Example: Capture-recapture
+
+\tiny
+```{r}
+mcse.q(N, .05)
+mcse.q(N.big, .05)
+```
+
+## Example: Capture-recapture
+
+\tiny
+```{r}
+mcse.q(N, .95)
+mcse.q(N.big, .95)
+```
+
+## Convergence diagnostics
+
+- A more popular method of MCMC output analysis
+- There are many; Gelman and Rubin diagnostic, Geweke's diagnostic, Heidel diagnostic, Raferty diagnostic, and other in `coda` package 
+- Useful to detect problem with a sampler, but offer ***no*** guarantee you have converged 
+- Think of these like hypothesis testing
+
+## Gelman and Rubin diagnostic
+Gelman and Rubin Diagnostic is also used a stopping criteria
+
+- Most popular method for stopping the simulation, one of many convergence diagnostics
+- Simulates $m$ independent parallel Markov chains
+- Considers a ratio of two different estimates of $\text{Var}_{\pi} g$, not $\sigma_{g}^{2}$ from the CLT
+- Argue the simulation should continue until the diagnostic ($\widehat{R}_{0.975}$) is close to 1
+
+## Toy example
+
+- Let $Y_1,\dots,Y_m$ be i.i.d.\ $\mbox{N}(\mu,\lambda)$ and let the prior for $(\mu,\lambda)$ be proportional to $1/\sqrt{\lambda}$
+- The posterior density is characterized by
+\[
+\pi(\mu,\lambda|y) \propto \lambda^{-\frac{m+1}{2}} \exp\left \{ -\frac{1}{2\lambda} \sum_{j=1}^m (y_j-\mu)^2 \right \}
+\]
+which is proper as long as $m \ge 3$
+
+## Toy example
+
+- A Gibbs sampler requires the full conditionals
+\[
+\mu|\lambda,y \sim \mbox{N} ({\bar y},\lambda/m)
+\]
+and 
+\[
+\lambda | \mu, y \sim \mbox{IG}\left( \frac{m-1}{2},
+  \frac{s^{2} + m(\bar{y}-\mu)^{2}}{2} \right) \; ,
+\]
+where ${\bar y}$ is the sample mean and $s^{2}=\sum (y_i - \bar{y})^{2}$ 
+
+## Toy example
+
+- Consider the Gibbs sampler that updates $\lambda$ then $\mu$
+\[
+(\lambda',\mu') \rightarrow (\lambda,\mu') \rightarrow (\lambda,\mu)
+\]
+- This sampler is geometrically ergodic
+- Suppose $m=11$, $\bar{y}=1$, and $s^{2}=14$
+- Then $E(\mu | y)=1$ and $E(\lambda | y)=2$
+- Consider estimating  $E(\mu | y)$ and $E(\lambda | y)$ with $\bar{\mu}_{n}$ and $\bar{\lambda}_{n}$
+
+## Toy example
+
+Stopped the simulation when
+\[
+\begin{matrix}
+BM: & t_{.975, (a - 1)} \displaystyle \frac{ \hat{\sigma}_{BM} }{ \sqrt{n} } + I(n < 400) < 0.04 \\
+ & \\
+GRD: & \hat{R}_{0.975} + I(n < 400) < 1.005
+\end{matrix}
+\]
+- 1000 independent replications
+    + Starting from $\bar{y}$ for BM
+    + Starting from draws from $\pi$ for GRD
+- Used 4 chains for GRD
+
+## Toy example
+
+Plots of $\bar{\mu}_{n}$ vs. $n$ for both stopping methods
+
+\tiny
+```{r, fig.show="hold", out.width="50%", echo=FALSE, fig.align = "center"}
+knitr::include_graphics("Master-paper3.pdf")
+knitr::include_graphics("Master-paper1.pdf")
+```
+
+## Toy example
+
+MSE | BM | GRD 
+:----:|:----:|:----:
+MSE for $E(\mu | y)$ | 3.73e-05 (1.8e-06) | 0.000134 (9.2e-06)
+MSE for $E(\lambda | y)$ | 0.000393 (1.8e-05) | 0.00165 (0.00012) 
+
+## Toy example
+
+Histograms of $\bar{\mu}_{n}$ for both stopping methods.
+
+\tiny
+```{r, fig.show="hold", out.width="50%", echo=FALSE, fig.align = "center"}
+knitr::include_graphics("Master-cbm2.pdf")
+knitr::include_graphics("Master-grd5.pdf")
+```
+
+## Summary
+
+- Bayesian inference usually requires a MCMC simulation
+- Metropolis-Hastings algorithm and Gibbs samplers
+- Basic idea is similar to OMC, but sampling from a Markov chain yields **dependent** draws
+- MCMC output analysis is often ignored or poorly understood
+
+
+
+
